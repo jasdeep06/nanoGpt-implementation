@@ -20,8 +20,8 @@ def get_batch(split,batch_size,block_size):
     #[[1,2,3],[2,3,4],[3,4,5],[4,5,6]] => [[2,3,4],[3,4,5],[4,5,6],[5,6,7]]
     batch_range_Y = batch_range_X + 1
     
-    x = torch.tensor(arr[batch_range_X].astype(np.int32))
-    y = torch.tensor(arr[batch_range_Y].astype(np.int32))
+    x = torch.tensor(arr[batch_range_X].astype(np.int64))
+    y = torch.tensor(arr[batch_range_Y].astype(np.int64))
 
     if device_type == 'cuda':
         # pin arrays x,y, which allows us to move them to GPU asynchronously (non_blocking=True)
