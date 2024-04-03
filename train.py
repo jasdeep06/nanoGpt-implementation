@@ -177,5 +177,7 @@ while True:
     # flush the gradients as soon as we can, no need for this memory anymore
     optimizer.zero_grad(set_to_none=True)
 
+    iter_num += 1
+
     if iter_num > max_iters:
         break
