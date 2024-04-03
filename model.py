@@ -111,9 +111,11 @@ class GPT(nn.Module):
 
 
     def forward(self,idx,targets=None):
+        device = idx.device
+
         b,t = idx.size()
         x = self.token_embedding(idx)
-        reference = torch.arange(0,t,dtype=torch.long)
+        reference = torch.arange(0,t,dtype=torch.long,device=device)
         pos = self.pos_embedding(reference)
         x = self.trans_dropout(x + pos)
         for block in self.blocks:
