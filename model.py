@@ -9,6 +9,18 @@ import torch.nn.functional as F
 
 @dataclass
 class GPTConfig:
+    """
+    Configuration class for the GPT model.
+    
+    Args:
+        block_size (int): The maximum sequence length of the input.
+        vocab_size (int): The size of the vocabulary.
+        num_transformer_block (int): The number of transformer blocks in the model.
+        num_transformer_heads (int): The number of attention heads in each transformer block.
+        n_embed (int): The dimensionality of the embedding layer.
+        dropout (int): The dropout rate.
+        bias (bool): Whether to include bias terms in the model.
+    """
     block_size: int = 1024
     vocab_size: int = 50304
     num_transformer_block: int = 12
@@ -19,154 +31,410 @@ class GPTConfig:
 
 
 class LayerNorm(nn.Module):
-    def __init__(self,ndim,bias):
+    """
+    Layer normalization module.
+
+    Args:
+        ndim (int): The number of dimensions in the input tensor.
+        bias (bool): Whether to include a bias term in the normalization.
+
+    Attributes:
+        weights (nn.Parameter): Learnable parameter representing the scaling factor.
+        bias (nn.Parameter or None): Learnable parameter representing the bias term, or None if bias is False.
+
+    """
+
+    def __init__(self, ndim, bias):
         super().__init__()
+        # Initialize the weights as learnable parameters with shape (ndim)
         self.weights = nn.Parameter(torch.ones(ndim))
+        # Initialize the bias as learnable parameters with shape (ndim) if bias is True, otherwise set it to None
         self.bias = nn.Parameter(torch.zeros(ndim)) if bias else None
 
-    def forward(self,x):
-        return F.layer_norm(x,self.weights.shape,self.weights,self.bias,1e-5)
+    def forward(self, x):
+        """
+        Forward pass of the layer normalization.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Normalized tensor.
+
+        """
+          # Apply layer normalization to the input tensor x using the weights 
+          # and bias parameters of the LayerNorm module. Use a small epsilon value of 1e-5 for numerical stability.
+        return F.layer_norm(x, self.weights.shape, self.weights, self.bias, 1e-5)
+
     
 
 class Block(nn.Module):
-    def __init__(self,config):
+    """
+    A block module in the nanoGPT model.
+
+    Args:
+        config (object): Configuration object containing model parameters.
+
+    Attributes:
+        layer_norm (LayerNorm): Layer normalization module.
+        attention (CausalAttention): Causal attention module.
+        mlp (MLP): Multi-layer perceptron module.
+
+    Methods:
+        forward(x): Performs forward pass through the block.
+
+    """
+
+    def __init__(self, config):
         super().__init__()
-        self.layer_norm = LayerNorm(config.n_embed,config.bias)
+        # Initialize the layer normalization module with the specified number of dimensions and bias parameter
+        self.layer_norm = LayerNorm(config.n_embed, config.bias)
+        
+        # Initialize the causal attention module with the given configuration
         self.attention = CausalAttention(config)
-        self.layer_norm = LayerNorm(config.n_embed,config.bias)
+        
+        # Initialize the layer normalization module again with the specified number of dimensions and bias parameter
+        self.layer_norm = LayerNorm(config.n_embed, config.bias)
+        
+        # Initialize the multi-layer perceptron module with the given configuration
         self.mlp = MLP(config)
     
-    def forward(self,x):
+    def forward(self, x):
+        """
+        Performs forward pass through the block.
+
+        Args:
+            x (tensor): Input tensor.
+
+        Returns:
+            tensor: Output tensor after passing through the block.
+
+        """
+        # Apply attention mechanism to the input tensor x and add it to x
         x = x + self.attention(self.layer_norm(x))
+        
+        # Apply multi-layer perceptron to the normalized input tensor x and add it to x
         x = x + self.mlp(self.layer_norm(x))
+        
+        # Return the updated tensor x
         return x
     
 class MLP(nn.Module):
-    def __init__(self,config):
+    """
+    Multi-Layer Perceptron (MLP) module.
+
+    Args:
+        config (object): Configuration object containing model parameters.
+
+    Attributes:
+        c1 (nn.Linear): Linear layer for the first hidden layer.
+        act1 (nn.GELU): Activation function for the first hidden layer.
+        c2 (nn.Linear): Linear layer for the second hidden layer.
+        dropout (nn.Dropout): Dropout layer for regularization.
+
+    Methods:
+        forward(x): Forward pass of the MLP.
+
+    """
+
+    def __init__(self, config):
         super().__init__()
-        self.c1 = nn.Linear(config.n_embed,4*config.n_embed)
+        # Linear layer for the first hidden layer
+        self.c1 = nn.Linear(config.n_embed, 4 * config.n_embed)
+        
+        # Activation function for the first hidden layer
         self.act1 = nn.GELU()
-        self.c2 = nn.Linear(4*config.n_embed,config.n_embed)
+        
+        # Linear layer for the second hidden layer
+        self.c2 = nn.Linear(4 * config.n_embed, config.n_embed)
+        
+        # Dropout layer for regularization
         self.dropout = nn.Dropout(config.dropout)
 
-    def forward(self,x):
-        x = self.c1(x)
-        x = self.act1(x)
-        x = self.c2(x)
-        x = self.dropout(x)
+    def forward(self, x):
+        """
+        Forward pass of the MLP.
 
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Output tensor.
+
+        """
+        # Apply linear transformation to the input
+        x = self.c1(x)
+        
+        # Apply activation function to the output of the first hidden layer
+        x = self.act1(x)
+        
+        # Apply linear transformation to the output of the activation function
+        x = self.c2(x)
+        
+        # Apply dropout regularization to the output
+        x = self.dropout(x)
+        
+        # Return the final output tensor
         return x
 
 
 class CausalAttention(nn.Module):
-    def __init__(self,config):
+    """
+    CausalAttention module performs causal attention mechanism.
+
+    Args:
+        config (object): Configuration object containing model parameters.
+
+    Attributes:
+        input_projection (nn.Linear): Linear layer for input projection.
+        bias (torch.Tensor): Buffer tensor for bias.
+        output_projection (nn.Linear): Linear layer for output projection.
+
+    Methods:
+        forward(x): Performs forward pass of the CausalAttention module.
+
+    """
+
+    def __init__(self, config):
         super().__init__()
-        self.input_projection = nn.Linear(config.n_embed,3*config.n_embed)
-        self.register_buffer('bias',torch.tril(torch.ones(config.block_size,config.block_size)).view(1,1,config.block_size,config.block_size))
-        self.output_projection = nn.Linear(config.n_embed,config.n_embed)
+        # Initialize the input projection layer
+        self.input_projection = nn.Linear(config.n_embed, 3 * config.n_embed)
+        
+        # Create a buffer tensor for the bias
+        self.register_buffer('bias', torch.tril(torch.ones(config.block_size, config.block_size)).view(1, 1, config.block_size, config.block_size))
+        
+        # Initialize the output projection layer
+        self.output_projection = nn.Linear(config.n_embed, config.n_embed)
 
-    def forward(self,x):
-        b,t,c = x.size()
-        x = self.input_projection(x)
-        k,q,v = torch.split(x,config.n_embed,dim=2)
-        # print(k.shape,q.shape,v.shape)
-        k = k.view(b,t,config.num_transformer_heads,c//config.num_transformer_heads).transpose(2,1)
-        q = q.view(b,t,config.num_transformer_heads,c//config.num_transformer_heads).transpose(2,1)
-        v = v.view(b,t,config.num_transformer_heads,c//config.num_transformer_heads).transpose(2,1)
-        # print(k.shape,q.shape,v.shape)
+    def forward(self, x):
+            """
+            Performs forward pass of the CausalAttention module.
 
-        attn_scores = q @ k.transpose(-2,-1)
-        attn_scores = attn_scores.masked_fill(self.bias[:,:,:t,:t] == 0,float('-inf'))
-        attn_scores = F.softmax(attn_scores,dim=-1)
-        # print(attn_scores.shape)
-        y = attn_scores @ v
-        # print(y.shape)
-        y = y.transpose(1,2).contiguous().view(b,t,c)
+            Args:
+                x (torch.Tensor): Input tensor of shape (batch_size, sequence_length, hidden_size).
 
-        y = self.output_projection(y)
+            Returns:
+                torch.Tensor: Output tensor of shape (batch_size, sequence_length, hidden_size).
 
-        # print(y.shape)
-        return y
+            """
+            # Get the dimensions of the input tensor
+            b, t, c = x.size()
+
+            # Apply input projection to the input tensor
+            x = self.input_projection(x)
+
+            # Split the input tensor into key, query, and value tensors
+            k, q, v = torch.split(x, config.n_embed, dim=2)
+
+            # Reshape and transpose the key, query, and value tensors
+            k = k.view(b, t, config.num_transformer_heads, c // config.num_transformer_heads).transpose(2, 1)
+            q = q.view(b, t, config.num_transformer_heads, c // config.num_transformer_heads).transpose(2, 1)
+            v = v.view(b, t, config.num_transformer_heads, c // config.num_transformer_heads).transpose(2, 1)
+
+            # Compute attention scores
+            attn_scores = q @ k.transpose(-2, -1)
+
+            # Mask attention scores
+            attn_scores = attn_scores.masked_fill(self.bias[:, :, :t, :t] == 0, float('-inf'))
+
+            # Apply softmax to compute attention weights
+            attn_scores = F.softmax(attn_scores, dim=-1)
+
+            # Compute the output tensor by multiplying attention weights with value tensor
+            y = attn_scores @ v
+
+            # Transpose and reshape the output tensor
+            y = y.transpose(1, 2).contiguous().view(b, t, c)
+
+            # Apply output projection to the output tensor
+            y = self.output_projection(y)
+
+            return y
+
 
 
 
 config = GPTConfig()
 
 class GPT(nn.Module):
-    def __init__(self,config):
-        super().__init__()
-        self.token_embedding = nn.Embedding(config.vocab_size,config.n_embed)
-        self.pos_embedding = nn.Embedding(config.block_size,config.n_embed)
-        self.trans_dropout = nn.Dropout(config.dropout)
-        self.blocks = nn.ModuleList([Block(config) for _ in range(config.num_transformer_block)])
-        self.layer_norm = LayerNorm(config.n_embed,config.bias)
-        self.lm_head = nn.Linear(config.n_embed,config.vocab_size)
+    def __init__(self, config):
+        """
+        Initializes the GPT model.
 
-        #weight tying
-        self.token_embedding.weight = self.lm_head.weight
+        Args:
+            config (object): Configuration object containing model parameters.
 
-        #initializing weights
-        self.apply(self._init_weights)
-
-
-
-    def forward(self,idx,targets=None):
-        device = idx.device
-
-        b,t = idx.size()
-        x = self.token_embedding(idx)
-        reference = torch.arange(0,t,dtype=torch.long,device=device)
-        pos = self.pos_embedding(reference)
-        x = self.trans_dropout(x + pos)
-        for block in self.blocks:
-            x = block(x)
+        """
+         # Initialize the parent class (nn.Module)
+        super().__init__() 
         
-        x = self.layer_norm(x)
+        # Embedding layer for token indices
+        self.token_embedding = nn.Embedding(config.vocab_size, config.n_embed) 
+        
+        # Embedding layer for positional encoding
+        self.pos_embedding = nn.Embedding(config.block_size, config.n_embed)  
+        
+        # Dropout layer for transformer
+        self.trans_dropout = nn.Dropout(config.dropout)  
+        
+        # List of transformer blocks
+        self.blocks = nn.ModuleList([Block(config) for _ in range(config.num_transformer_block)])  
+        
+        # Layer normalization
+        self.layer_norm = LayerNorm(config.n_embed, config.bias)  
+        
+        # Linear layer for language modeling head
+        self.lm_head = nn.Linear(config.n_embed, config.vocab_size)  
 
-        if targets is not None:
-            logits = self.lm_head(x)
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
-        else:
-            logits = self.lm_head(x[:, [-1], :])
-            loss = None
+        # Tie the weights of token embedding and language modeling head
+        self.token_embedding.weight = self.lm_head.weight  
 
+        # Apply weight initialization function to all modules in the model
+        self.apply(self._init_weights)  
 
-        return logits,loss
-    
+    def forward(self, idx, targets=None):
+        """
+        Performs forward pass of the GPT model.
+
+        Args:
+            idx (torch.Tensor): Input tensor of token indices.
+            targets (torch.Tensor): Target tensor of token indices.
+
+        Returns:
+            torch.Tensor: Logits tensor.
+            torch.Tensor: Loss tensor if targets are provided, else None.
+
+        """
+        # Get the device on which the input tensor is located
+        device = idx.device  
+
+        # Get the batch size and sequence length of the input tensor
+        b, t = idx.size() 
+        
+        # Embed the token indices using the token embedding layer
+        x = self.token_embedding(idx)  
+        
+        # Create a tensor of positional indices
+        reference = torch.arange(0, t, dtype=torch.long, device=device)  
+        
+         # Embed the positional indices using the positional embedding layer
+        pos = self.pos_embedding(reference) 
+        
+        # Apply dropout to the sum of token and positional embeddings
+        x = self.trans_dropout(x + pos)  
+        
+        # Iterate over each transformer block
+        for block in self.blocks:  
+        
+            # Apply the transformer block to the input tensor
+            x = block(x)  
+        
+        # Apply layer normalization to the output tensor
+        x = self.layer_norm(x)  
+
+        
+        # If targets are provided
+        if targets is not None:  
+        
+            # Compute the logits using the language modeling head
+            logits = self.lm_head(x)  
+        
+            # Compute the cross-entropy loss
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)  
+        
+        # If targets are not provided
+        else:  
+        
+            # Compute the logits for the last token in the sequence
+            logits = self.lm_head(x[:, [-1], :])  
+        
+            # Set the loss to None
+            loss = None  
+
+        
+        # Return the logits and loss (if available)
+        return logits, loss  
 
     @torch.no_grad()
-    def generate(self,idx,max_new_tokens,temperature=1.0,top_k=None):
+    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
+        """
+        Generates new tokens using the GPT model.
 
-        for _ in range(max_new_tokens):
-            output = self(idx)
-            relevant_output = output[:,-1,:]/temperature
-            probs = F.softmax(relevant_output,dim=-1)
-            idx_next = torch.multinomial(probs,num_samples=1)
-            idx = torch.cat((idx,idx_next),dim=1) 
-        return idx
-    
-    def get_num_parameters(self,non_embedding=True):
+        Args:
+            idx (torch.Tensor): Input tensor of token indices.
+            max_new_tokens (int): Maximum number of new tokens to generate.
+            temperature (float): Temperature value for controlling randomness.
+            top_k (int): Number of top-k tokens to consider for sampling.
+
+        Returns:
+            torch.Tensor: Tensor of generated token indices.
+
+        """
+         # Iterate for the maximum number of new tokens to generate
+        for _ in range(max_new_tokens): 
+            
+            # Generate output using the GPT model
+            output = self(idx)  
+            
+            # Get the relevant output for the last token and apply temperature
+            relevant_output = output[:, -1, :] / temperature  
+            
+           # Compute the probabilities of the next token using softmax
+            probs = F.softmax(relevant_output, dim=-1)  
+            
+             # Sample the next token based on the probabilities
+            idx_next = torch.multinomial(probs, num_samples=1) 
+            
+            # Concatenate the next token to the input tensor
+            idx = torch.cat((idx, idx_next), dim=1)  
+        
+        # Return the generated token indices
+        return idx  
+
+    def get_num_parameters(self, non_embedding=True):
+        """
+        Calculates the total number of parameters in the model.
+
+        Args:
+            non_embedding (bool): Whether to exclude embedding parameters.
+
+        Returns:
+            int: Total number of parameters.
+
+        """
+        # Initialize the variable to store the total number of parameters
         total_parameters = 0
+        
+        # Iterate over each parameter in the model
         for parameter in self.parameters():
+            # Add the number of elements in the parameter to the total count
             total_parameters += parameter.data.numel()
+        
+        # If non_embedding is True, subtract the number of elements in the positional embedding
         if non_embedding:
             total_parameters -= self.pos_embedding.weight.numel()
-            #As we are using weight tying, the token embedding weights will be used as weights in the final layer
-            #So we don't exclude them
-            # total_parameters -= self.token_embedding.weight.numel()
 
+        # Return the total number of parameters
         return total_parameters
 
-    def _init_weights(self,module):
-        if isinstance(module,nn.Linear):
-            torch.nn.init.normal_(module.weight,mean=0.0,std=0.02)
-            if module.bias is not None:
-                torch.nn.init.zeros_(module.bias)
-        
-        elif isinstance(module,nn.Embedding):
-            torch.nn.init.normal_(module.weight,mean=0.0,std=0.02)
+    def _init_weights(self, module):
+        """
+        Initializes the weights of the model.
 
-    
+        Args:
+            module (nn.Module): Module to initialize weights for.
+
+        """
+        if isinstance(module, nn.Linear):
+            # Initialize the weights of the linear module with a normal distribution
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None:
+                # Initialize the bias of the linear module with zeros
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            # Initialize the weights of the embedding module with a normal distribution
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+
     def configure_optimizer(self, weight_decay, learning_rate, betas):
         """
         Configures and returns an optimizer for the model.
@@ -181,24 +449,38 @@ class GPT(nn.Module):
 
         """
         param_dict = {pn: p for pn, p in self.named_parameters()}
+
+        # Create a dictionary of parameter names and their corresponding values
         param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
 
+        # Filter out parameters that do not require gradients
         decay_params = [p for pn, p in param_dict.items() if p.dim() >= 2]
+
+        # Get parameters with dimensions greater than or equal to 2
         nodecay_params = [p for pn, p in param_dict.items() if p.dim() < 2]
 
+        # Get parameters with dimensions less than 2
         optim_groups = [
             {'params': decay_params, 'weight_decay': weight_decay},
             {'params': nodecay_params, 'weight_decay': 0.0}
         ]
 
+        # Group parameters into two groups: decayed and non-decayed, with different weight decay values
         num_decay_params = sum(p.numel() for p in decay_params)
+
+        # Calculate the total number of parameters in the decayed group
         num_nodecay_params = sum(p.numel() for p in nodecay_params)
 
+        # Calculate the total number of parameters in the non-decayed group
         print(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters")
+        
+        # Print the number of decayed parameter tensors and their total number of parameters
         print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
 
+        # Create an AdamW optimizer with the specified groups of parameters, learning rate, and betas
         optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas)
 
+        # Return the configured optimizer
         return optimizer
     
 

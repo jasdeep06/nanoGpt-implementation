@@ -38,34 +38,35 @@ def load_dataset():
     val_arr = np.memmap('val.bin',dtype=np.uint16,mode='r')
     return train_arr,val_arr
 
-n_layer = 12
-n_head = 12
-n_embd = 768
-batch_size = 4
-block_size = 1024
-bias = False
-dropout = 0.0
-vocab_size = 50304
+# Model configuration
+n_layer = 12  # Number of transformer blocks
+n_head = 12  # Number of attention heads
+n_embd = 768  # Embedding dimension
+batch_size = 4  # Number of samples in each batch
+block_size = 1024  # Length of input sequence
+bias = False  # Whether to include bias in the model
+dropout = 0.0  # Dropout rate
+vocab_size = 50304  # Size of the vocabulary
 
-weight_decay = 1e-1
-beta1 = 0.9
-beta2 = 0.95
-learning_rate = 6e-4
-eval_iters = 2
-warmup_iters = 20
-lr_decay_iters = 1000
-min_lr = 6e-5
-eval_interval = 20
-max_iters = 1000
-device = 'cuda'
-dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
+# Optimization parameters
+weight_decay = 1e-1  # Weight decay for regularization
+beta1 = 0.9  # Beta1 parameter for Adam optimizer
+beta2 = 0.95  # Beta2 parameter for Adam optimizer
+learning_rate = 6e-4  # Learning rate
+eval_iters = 2  # Number of iterations for evaluation
+warmup_iters = 20  # Number of warmup iterations for learning rate
+lr_decay_iters = 1000  # Number of iterations for learning rate decay
+min_lr = 6e-5  # Minimum learning rate
+eval_interval = 20  # Interval for evaluation
+max_iters = 1000  # Maximum number of iterations
+device = 'cuda'  # Device for training (cuda or cpu)
+dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16'  # Data type for training
 
+run_index = 2  # Index of the current run
+out_dir = f"runs/{run_index}"  # Output directory for saving checkpoints
+gradient_accumulation_steps = 5 * 8  # Number of steps for gradient accumulation
 
-run_index = 2
-out_dir = f"runs/{run_index}"
-gradient_accumulation_steps = 5 * 8
-
-grad_clip = 1.0 
+grad_clip = 1.0  # Gradient clipping threshold
 
 
 if not os.path.exists(out_dir):
@@ -73,10 +74,19 @@ if not os.path.exists(out_dir):
 
 
 
-torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
-torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
-device_type = 'cuda' if 'cuda' in device else 'cpu' # for later use in torch.autocast
+# Allow tf32 on matmul
+torch.backends.cuda.matmul.allow_tf32 = True
+
+# Allow tf32 on cudnn
+torch.backends.cudnn.allow_tf32 = True
+
+# Determine the device type (cuda or cpu) for later use in torch.autocast
+device_type = 'cuda' if 'cuda' in device else 'cpu'
+
+# Map the dtype to the corresponding torch data type
 ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
+
+# Create a null context if the device type is cpu, otherwise use torch.amp.autocast to enable automatic mixed precision training
 ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
 
@@ -99,20 +109,59 @@ optimizer = model.configure_optimizer(weight_decay, learning_rate, (beta1, beta2
 
 @torch.no_grad()
 def estimate_loss():
+    """
+    Estimates the loss for the model on the train and validation splits.
+
+    Returns:
+        dict: A dictionary containing the mean loss for each split.
+    """
+    # Create an empty dictionary to store the output
     out = {}
+    
+    # Set the model to evaluation mode
     model.eval()
+    
+    # Iterate over the train and val splits
     for split in ['train', 'val']:
+        
+        # Create a tensor to store the losses for each iteration
         losses = torch.zeros(eval_iters)
+        
+        # Perform evaluation for eval_iters number of iterations
         for k in range(eval_iters):
+            
+            # Get a batch of input and target sequences
             X, Y = get_batch(split, batch_size, block_size)
+            
+            # Enable automatic mixed precision training
             with ctx:
+                
+                # Forward pass through the model to get logits and loss
                 logits, loss = model(X, Y)
+                
+            # Store the loss value in the losses tensor
             losses[k] = loss.item()
+        
+        # Calculate the mean loss for the current split
         out[split] = losses.mean()
+    
+    # Set the model back to training mode
     model.train()
+    
+    # Return the dictionary containing the mean losses for each split
     return out
 
 def get_lr(it):
+    """
+    Calculate the learning rate based on the current iteration.
+
+    Args:
+        it (int): The current iteration.
+
+    Returns:
+        float: The calculated learning rate.
+
+    """
     # 1) linear warmup for warmup_iters steps
     if it < warmup_iters:
         return learning_rate * it / warmup_iters
