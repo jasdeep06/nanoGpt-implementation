@@ -77,10 +77,10 @@ ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torc
 ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
 
-model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
-                  bias=bias, vocab_size=None, dropout=dropout,vocab_size=vocab_size)
+model_args = dict(num_transformer_block=n_layer, num_transformer_heads=n_head, n_embd=n_embd, block_size=block_size,
+                  bias=bias, dropout=dropout,vocab_size=vocab_size)
 
-wandb.init(project="nanogpt-run", name="run " + run_index, config=model_args)
+wandb.init(project="nanogpt-run", name="run " + str(run_index), config=model_args)
 
 
 gptconf = GPTConfig(**model_args)
