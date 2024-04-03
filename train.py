@@ -127,6 +127,8 @@ def get_lr(it):
 X,y = get_batch('train',batch_size,block_size)
 iter_num = 0
 running_mfu = -1.0
+best_val_loss = 1e9
+
 
 while True:
     lr = get_lr(iter_num)
