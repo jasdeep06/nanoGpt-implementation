@@ -41,7 +41,7 @@ def load_dataset():
 n_layer = 12
 n_head = 12
 n_embd = 768
-batch_size = 12 
+batch_size = 4
 block_size = 1024
 bias = False
 dropout = 0.0
