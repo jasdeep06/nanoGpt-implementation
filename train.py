@@ -53,20 +53,23 @@ beta2 = 0.95
 learning_rate = 6e-4
 eval_iters = 2
 warmup_iters = 20
-lr_decay_iters = 6000
+lr_decay_iters = 1000
 min_lr = 6e-5
 eval_interval = 20
-max_iters = 6000
+max_iters = 1000
 device = 'cuda'
 dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
 
 
-run_index = 1
+run_index = 2
 out_dir = f"runs/{run_index}"
 gradient_accumulation_steps = 5 * 8
 
 grad_clip = 1.0 
 
+
+if not os.path.exists(out_dir):
+    os.makedirs(out_dir)
 
 
 
