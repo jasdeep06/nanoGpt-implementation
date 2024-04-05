@@ -1,8 +1,26 @@
-Transformers
+# Transformers
+
+An effort to implement a variant of GPT-2 from scratch using Pytorch.
 
 Configs - block size(1024), vocab size(50304), number_of_transformer_blocks(12), number_of_transformer_heads(12), dimensionality_of_embeddings(768), dropout(0), bias_in_linear_or_layernorms(True)
 
-Steps in transformer 
+## Result
+
+Trained on openwebtext-100k(https://huggingface.co/datasets/Elriggs/openwebtext-100k)
+
+Training curve
+
+
+![tr-curve](https://i.ibb.co/HhnVRcR/W-B-Chart-4-6-2024-1-24-54-AM.png)
+
+
+## Conclusion
+
+Successfully overfitted on training data, proving the model was implemented correctly.
+
+
+
+## Explaination(self-note)
 
 
 
@@ -30,7 +48,7 @@ Steps in transformer
         1. Let’s say the input dimension is [1,1024,768] i.e. num_tokens = 1024,n_dim=768 and bs=1. 
         2. We’ll take every row independently i.e. in total 1024 rows. For each row we’ll find the mean and variance of the 768 n_embed and normalize that row with it.
         3. Once all the rows are independently normalized, we’ll multiply the normalized matrix with a weight and add a bias. This weight will have 768 trainable parameters that will be learnt. We are essentially asking the question, if not normalization, then what?
-    2. The input is first upscaled to get 3 matrices k,q and v. It is passed through a linear layer with weights dimension (embedding_dimension,3*embedding dimension). The shape of the resulting tensor is (batch_size,block_size,3*embedding_dimension).
+    2. The input is first upscaled to get 3 matrices k,q and v. It is passed through a linear layer with weights dimension (embedding_dimension,3Xembedding dimension). The shape of the resulting tensor is (batch_size,block_size,3Xembedding_dimension).
     3. It is then split into 3 tensors to give k,q and v , each of dimension (batch_size,block_size,embedding_dimension)
     4. k, q and v are then reshaped to (batch_size,block_size,num_heads,embedding_dimension//num_heads). For example if the input was [1,8,64] and num_heads = 4, the reshaped tensor would be [1,8,4,16]. This can be visualized as 8 sheets of paper parallel to each other each having matrices with 4 rows and 16 columns. The initial setup had 1 row and 64 columns. These 64 are the embeddings of the particular token represented with the sheet here.These 64 embeddings were now split into 4 rows of 16 elements each.
     5. We need to perform multihead attention on 16 embedding elements of all tokens combined on one attention head. Thus 4 heads will cover all 4*16 embedding elements. To do this, we need the dimension after the batch size be 4, so we take transpose of the k,q,v vectors to make their dimension as [1,4,8,16] or (batch_size,num_heads,block_size,embedding_dimension//num_heads). This can be visualized as grouping 16 embedding elements in each head for all the tokens.
